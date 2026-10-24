@@ -224,10 +224,9 @@
     const dropZone = document.getElementById('dropZone');
     const fileInput = document.getElementById('fileInput');
     let selectedFile = null;
-    let supabaseConfig = null;
+    let cfg = null;
 
-    // Load config from server
-    fetch('/api/config').then(r => r.json()).then(c => supabaseConfig = c);
+    fetch('/api/config').then(r => r.json()).then(c => cfg = c);
 
     dropZone.addEventListener('click', () => fileInput.click());
     dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
@@ -255,7 +254,7 @@
 
     async function uploadVideo() {
       if (!selectedFile) return showToast('Please select a video first', 'error');
-      if (!supabaseConfig) return showToast('Config not loaded, try again', 'error');
+      if (!cfg) return showToast('Config not loaded, try again', 'error');
 
       const btn = document.getElementById('uploadBtn');
       const progressWrap = document.getElementById('progressWrap');
@@ -267,60 +266,40 @@
       btn.disabled = true;
       progressWrap.classList.add('show');
 
-      const fileName = `${Date.now()}-${selectedFile.name.replace(/\s+/g, '_')}`;
-      const { supabaseUrl, supabaseKey, bucket } = supabaseConfig;
+      // Upload directly to Cloudinary — no size limit on free plan
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('upload_preset', cfg.cloudinaryPreset);
+      formData.append('resource_type', 'video');
 
-      let lastLoaded = 0;
-      let lastTime = Date.now();
+      const xhr = new XMLHttpRequest();
+      let lastLoaded = 0, lastTime = Date.now();
 
-      const upload = new tus.Upload(selectedFile, {
-        endpoint: `${supabaseUrl}/storage/v1/upload/resumable`,
-        retryDelays: [0, 3000, 5000, 10000],
-        chunkSize: 6 * 1024 * 1024, // 6MB chunks
-        headers: {
-          authorization: `Bearer ${supabaseKey}`,
-          apikey: supabaseKey,
-        },
-        uploadDataDuringCreation: true,
-        removeFingerprintOnSuccess: true,
-        metadata: {
-          bucketName: bucket,
-          objectName: fileName,
-          contentType: selectedFile.type,
-          cacheControl: '3600',
-        },
-        onError(error) {
-          console.error('Upload error:', error);
-          btn.disabled = false;
-          progressWrap.classList.remove('show');
-          showToast('❌ Upload failed: ' + error.message, 'error');
-        },
-        onProgress(bytesUploaded, bytesTotal) {
-          const pct = Math.round((bytesUploaded / bytesTotal) * 100);
-          progressBar.style.width = pct + '%';
-          progressPct.textContent = pct + '%';
+      xhr.upload.addEventListener('progress', (e) => {
+        if (!e.lengthComputable) return;
+        const pct = Math.round((e.loaded / e.total) * 100);
+        progressBar.style.width = pct + '%';
+        progressPct.textContent = pct + '%';
+        progressLabel.textContent = `Uploading ${formatSize(e.loaded)} of ${formatSize(e.total)}`;
 
-          // Speed calculation
-          const now = Date.now();
-          const elapsed = (now - lastTime) / 1000;
-          if (elapsed > 0.5) {
-            const speed = (bytesUploaded - lastLoaded) / elapsed;
-            progressSpeed.textContent = formatSize(speed) + '/s';
-            lastLoaded = bytesUploaded;
-            lastTime = now;
-          }
+        const now = Date.now();
+        const elapsed = (now - lastTime) / 1000;
+        if (elapsed > 0.5) {
+          progressSpeed.textContent = formatSize((e.loaded - lastLoaded) / elapsed) + '/s';
+          lastLoaded = e.loaded;
+          lastTime = now;
+        }
+      });
 
-          const remaining = bytesTotal - bytesUploaded;
-          progressLabel.textContent = `Uploading ${formatSize(bytesUploaded)} of ${formatSize(bytesTotal)}`;
-        },
-        onSuccess() {
+      xhr.addEventListener('load', () => {
+        btn.disabled = false;
+        if (xhr.status === 200) {
+          const res = JSON.parse(xhr.responseText);
           progressBar.style.width = '100%';
           progressPct.textContent = '100%';
           progressLabel.textContent = 'Upload complete!';
           progressSpeed.textContent = '';
           showToast('✅ Video uploaded successfully!', 'success');
-          btn.disabled = false;
-
           setTimeout(() => {
             progressWrap.classList.remove('show');
             progressBar.style.width = '0%';
@@ -329,10 +308,21 @@
             fileInput.value = '';
             progressLabel.textContent = 'Uploading...';
           }, 2500);
-        },
+        } else {
+          const err = JSON.parse(xhr.responseText);
+          progressWrap.classList.remove('show');
+          showToast('❌ ' + (err.error?.message || 'Upload failed'), 'error');
+        }
       });
 
-      upload.start();
+      xhr.addEventListener('error', () => {
+        btn.disabled = false;
+        progressWrap.classList.remove('show');
+        showToast('❌ Network error. Try again.', 'error');
+      });
+
+      xhr.open('POST', `https://api.cloudinary.com/v1_1/${cfg.cloudinaryCloud}/video/upload`);
+      xhr.send(formData);
     }
 
     function showToast(msg, type) {

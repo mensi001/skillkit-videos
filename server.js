@@ -19,37 +19,43 @@ function getPublicUrl(fileName) {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Expose safe config to browser (service key used only server-side)
+// Expose config to browser (Cloudinary upload + Supabase listing)
 app.get('/api/config', (req, res) => {
   res.json({
+    // Supabase — for listing videos
     supabaseUrl: SUPABASE_URL,
-    supabaseKey: SUPABASE_KEY, // service_role used here since this is local dev
+    supabaseKey: SUPABASE_KEY,
     bucket: BUCKET,
+    // Cloudinary — for uploading (unsigned, safe to expose)
+    cloudinaryCloud: process.env.CLOUDINARY_CLOUD_NAME,
+    cloudinaryPreset: process.env.CLOUDINARY_UPLOAD_PRESET,
   });
 });
 
-// Get all videos
+// Get all videos from Cloudinary
 app.get('/api/videos', async (req, res) => {
   try {
+    const cloud = process.env.CLOUDINARY_CLOUD_NAME;
+    const apiKey = process.env.CLOUDINARY_API_KEY;
+    const apiSecret = process.env.CLOUDINARY_API_SECRET;
+
     const response = await fetch(
-      `${SUPABASE_URL}/storage/v1/object/list/${BUCKET}`,
+      `https://api.cloudinary.com/v1_1/${cloud}/resources/video?max_results=100&direction=-1`,
       {
-        method: 'POST',
-        headers: { ...HEADERS, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prefix: '', limit: 1000, sortBy: { column: 'created_at', order: 'desc' } }),
+        headers: {
+          Authorization: 'Basic ' + Buffer.from(`${apiKey}:${apiSecret}`).toString('base64')
+        }
       }
     );
     const data = await response.json();
-    if (!response.ok) return res.status(500).json({ error: data.message || 'Failed to list videos' });
+    if (!response.ok) return res.status(500).json({ error: data.error?.message || 'Failed to list videos' });
 
-    const videos = data
-      .filter((f) => f.name && f.name.match(/\.(mp4|webm|mov|avi|mkv)$/i))
-      .map((f) => ({
-        name: f.name,
-        url: getPublicUrl(f.name),
-        created_at: f.created_at,
-        size: f.metadata?.size,
-      }));
+    const videos = (data.resources || []).map(v => ({
+      name: v.public_id.split('/').pop() + '.' + v.format,
+      url: v.secure_url,
+      created_at: v.created_at,
+      size: v.bytes,
+    }));
 
     res.json(videos);
   } catch (err) {
