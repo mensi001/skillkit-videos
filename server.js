@@ -1,4 +1,4 @@
-if (process.env.NODE_ENV !== 'production') require('dotenv').config();
+require('dotenv').config();
 const express = require('express');
 const path = require('path');
 
@@ -13,49 +13,39 @@ const HEADERS = {
   apikey: SUPABASE_KEY,
 };
 
-function getPublicUrl(fileName) {
-  return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${encodeURIComponent(fileName)}`;
-}
-
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Expose config to browser (Cloudinary upload + Supabase listing)
+// Config for browser TUS upload
 app.get('/api/config', (req, res) => {
   res.json({
-    // Supabase — for listing videos
     supabaseUrl: SUPABASE_URL,
     supabaseKey: SUPABASE_KEY,
     bucket: BUCKET,
-    // Cloudinary — for uploading (unsigned, safe to expose)
-    cloudinaryCloud: process.env.CLOUDINARY_CLOUD_NAME,
-    cloudinaryPreset: process.env.CLOUDINARY_UPLOAD_PRESET,
   });
 });
 
-// Get all videos from Cloudinary
+// List all videos
 app.get('/api/videos', async (req, res) => {
   try {
-    const cloud = process.env.CLOUDINARY_CLOUD_NAME;
-    const apiKey = process.env.CLOUDINARY_API_KEY;
-    const apiSecret = process.env.CLOUDINARY_API_SECRET;
-
     const response = await fetch(
-      `https://api.cloudinary.com/v1_1/${cloud}/resources/video?max_results=100&direction=-1`,
+      `${SUPABASE_URL}/storage/v1/object/list/${BUCKET}`,
       {
-        headers: {
-          Authorization: 'Basic ' + Buffer.from(`${apiKey}:${apiSecret}`).toString('base64')
-        }
+        method: 'POST',
+        headers: { ...HEADERS, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prefix: '', limit: 1000, sortBy: { column: 'created_at', order: 'desc' } }),
       }
     );
     const data = await response.json();
-    if (!response.ok) return res.status(500).json({ error: data.error?.message || 'Failed to list videos' });
+    if (!response.ok) return res.status(500).json({ error: data.message || 'Failed to list videos' });
 
-    const videos = (data.resources || []).map(v => ({
-      name: v.public_id.split('/').pop() + '.' + v.format,
-      url: v.secure_url,
-      created_at: v.created_at,
-      size: v.bytes,
-    }));
+    const videos = data
+      .filter((f) => f.name && f.name.match(/\.(mp4|webm|mov|avi|mkv)$/i))
+      .map((f) => ({
+        name: f.name,
+        url: `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${encodeURIComponent(f.name)}`,
+        created_at: f.created_at,
+        size: f.metadata?.size,
+      }));
 
     res.json(videos);
   } catch (err) {
@@ -67,12 +57,13 @@ app.get('/videos', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'videos.html'));
 });
 
-// Local dev
-if (process.env.NODE_ENV !== 'production') {
+// Local dev only
+if (!process.env.VERCEL) {
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => {
-    console.log(`🚀 Server running at http://localhost:${PORT}`);
-    console.log(`📦 Bucket: ${BUCKET}`);
+    console.log(`🚀 http://localhost:${PORT}`);
+    console.log(`SUPABASE_URL: ${SUPABASE_URL ? '✅' : '❌ MISSING'}`);
+    console.log(`SUPABASE_KEY: ${SUPABASE_KEY ? '✅' : '❌ MISSING'}`);
   });
 }
 
