@@ -1,4 +1,4 @@
-require('dotenv').config();
+if (process.env.NODE_ENV !== 'production') require('dotenv').config();
 const express = require('express');
 const path = require('path');
 
@@ -17,7 +17,7 @@ function getPublicUrl(fileName) {
   return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${encodeURIComponent(fileName)}`;
 }
 
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Expose safe config to browser (service key used only server-side)
 app.get('/api/config', (req, res) => {
@@ -61,8 +61,13 @@ app.get('/videos', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'videos.html'));
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running at http://localhost:${PORT}`);
-  console.log(`📦 Bucket: ${BUCKET}`);
-});
+// Local dev
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running at http://localhost:${PORT}`);
+    console.log(`📦 Bucket: ${BUCKET}`);
+  });
+}
+
+module.exports = app;
