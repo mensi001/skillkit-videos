@@ -14,18 +14,13 @@ const HEADERS = {
 };
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
 
-// Config for browser TUS upload
+// ── API ROUTES FIRST (before static) ──────────────────────────
+
 app.get('/api/config', (req, res) => {
-  res.json({
-    supabaseUrl: SUPABASE_URL,
-    supabaseKey: SUPABASE_KEY,
-    bucket: BUCKET,
-  });
+  res.json({ supabaseUrl: SUPABASE_URL, supabaseKey: SUPABASE_KEY, bucket: BUCKET });
 });
 
-// List all videos
 app.get('/api/videos', async (req, res) => {
   try {
     const response = await fetch(
@@ -54,11 +49,11 @@ app.get('/api/videos', async (req, res) => {
   }
 });
 
-// Delete a video — POST to avoid Express wildcard issues with dots in filename
 app.post('/api/delete', async (req, res) => {
   try {
     const { filename } = req.body;
     if (!filename) return res.status(400).json({ error: 'filename required' });
+
     const response = await fetch(
       `${SUPABASE_URL}/storage/v1/object/${BUCKET}`,
       {
@@ -79,7 +74,10 @@ app.get('/videos', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'videos.html'));
 });
 
-// Local dev only
+// ── STATIC FILES LAST ──────────────────────────────────────────
+app.use(express.static(path.join(__dirname, 'public')));
+
+// ── LOCAL DEV ──────────────────────────────────────────────────
 if (!process.env.VERCEL) {
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => {
