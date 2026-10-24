@@ -53,6 +53,26 @@ app.get('/api/videos', async (req, res) => {
   }
 });
 
+// Delete a video
+app.delete('/api/videos/:filename', async (req, res) => {
+  try {
+    const filename = decodeURIComponent(req.params.filename);
+    const response = await fetch(
+      `${SUPABASE_URL}/storage/v1/object/${BUCKET}`,
+      {
+        method: 'DELETE',
+        headers: { ...HEADERS, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prefixes: [filename] }),
+      }
+    );
+    const data = await response.json();
+    if (!response.ok) return res.status(500).json({ error: data.message || 'Delete failed' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/videos', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'videos.html'));
 });

@@ -71,6 +71,23 @@ h1{font-size:clamp(40px,6vw,72px);line-height:.99;letter-spacing:-.065em;margin:
 .spinner{width:22px;height:22px;border:2px solid rgba(99,214,255,0.15);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 
+/* Delete */
+.delete-btn{position:absolute;top:10px;right:10px;z-index:5;width:30px;height:30px;border-radius:50%;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.35);color:#f87171;font-size:13px;cursor:pointer;display:none;align-items:center;justify-content:center;transition:all .2s;backdrop-filter:blur(6px)}
+.card:hover .delete-btn{display:flex}
+.delete-btn:hover{background:rgba(239,68,68,0.4);transform:scale(1.1)}
+.confirm-overlay{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.88);backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center}
+.confirm-overlay.open{display:flex}
+.confirm-box{background:#0d111a;border:1px solid #25475c;border-radius:18px;padding:32px;text-align:center;max-width:360px;width:90%;box-shadow:0 0 60px rgba(239,68,68,0.12);animation:modalIn .25s ease}
+.confirm-box .ci{font-size:2.5rem;margin-bottom:12px}
+.confirm-box h3{color:#fff;margin:0 0 8px;font-size:1.1rem}
+.confirm-box p{color:var(--muted);font-size:0.85rem;margin:0 0 24px;word-break:break-all}
+.confirm-actions{display:flex;gap:10px;justify-content:center}
+.btn-cancel{padding:10px 24px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer;font-size:0.9rem;transition:all .2s}
+.btn-cancel:hover{border-color:#527f9b;color:var(--blue)}
+.btn-del{padding:10px 24px;border-radius:8px;border:1px solid rgba(239,68,68,0.4);background:rgba(239,68,68,0.15);color:#f87171;cursor:pointer;font-size:0.9rem;font-weight:700;transition:all .2s}
+.btn-del:hover{background:rgba(239,68,68,0.3)}
+.btn-del:disabled{opacity:0.5;cursor:not-allowed}
+
 /* Modal */
 .modal-overlay{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,0.92);backdrop-filter:blur(12px);display:none;align-items:center;justify-content:center;padding:16px}
 .modal-overlay.open{display:flex}
@@ -186,6 +203,19 @@ footer{padding:28px 0 38px;border-top:1px solid var(--line);color:var(--muted);f
   <span>Creative Video Editor · AI Video Creator</span>
 </footer>
 
+<!-- Confirm Delete -->
+<div class="confirm-overlay" id="confirmOverlay">
+  <div class="confirm-box">
+    <div class="ci">🗑️</div>
+    <h3>Delete this video?</h3>
+    <p id="confirmName"></p>
+    <div class="confirm-actions">
+      <button class="btn-cancel" onclick="closeConfirm()">Cancel</button>
+      <button class="btn-del" id="btnConfirmDel" onclick="confirmDelete()">Delete</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal -->
 <div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
   <div class="modal">
@@ -278,6 +308,7 @@ function renderGallery() {
         </div>
         <div class="tag">${v.category}</div>
         ${v.size ? `<div class="size-tag">${formatSize(v.size)}</div>` : ''}
+        <button class="delete-btn" title="Delete video">✕</button>
       </div>
       <div class="cardbody">
         <h3 title="${cleanName}">${cleanName}</h3>
@@ -288,6 +319,10 @@ function renderGallery() {
         </div>
       </div>
     `;
+    card.querySelector('.delete-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      openConfirm(v.name, cleanName);
+    });
     card.addEventListener('click', () => openModal(v.url, cleanName));
     gallery.appendChild(card);
   });
@@ -309,7 +344,43 @@ function closeModalDirect() {
   document.getElementById('modalOverlay').classList.remove('open');
 }
 
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModalDirect(); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeModalDirect(); closeConfirm(); }
+});
+
+let pendingDelete = null;
+
+function openConfirm(filename, cleanName) {
+  pendingDelete = filename;
+  document.getElementById('confirmName').textContent = cleanName;
+  document.getElementById('confirmOverlay').classList.add('open');
+}
+
+function closeConfirm() {
+  pendingDelete = null;
+  document.getElementById('confirmOverlay').classList.remove('open');
+}
+
+async function confirmDelete() {
+  if (!pendingDelete) return;
+  const btn = document.getElementById('btnConfirmDel');
+  btn.disabled = true;
+  btn.textContent = 'Deleting...';
+  try {
+    const res = await fetch('/api/videos/' + encodeURIComponent(pendingDelete), { method: 'DELETE' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Delete failed');
+    allVideos = allVideos.filter(v => v.name !== pendingDelete);
+    document.getElementById('statCount').textContent = allVideos.length;
+    closeConfirm();
+    renderGallery();
+  } catch (err) {
+    alert('Error: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Delete';
+  }
+}
 
 loadVideos();
 </script>
