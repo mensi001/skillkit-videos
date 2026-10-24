@@ -367,7 +367,11 @@ async function confirmDelete() {
   btn.disabled = true;
   btn.textContent = 'Deleting...';
   try {
-    const res = await fetch('/api/videos/' + encodeURIComponent(pendingDelete), { method: 'DELETE' });
+    const res = await fetch('/api/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: pendingDelete })
+    });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Delete failed');
     allVideos = allVideos.filter(v => v.name !== pendingDelete);

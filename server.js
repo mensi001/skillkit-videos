@@ -54,10 +54,11 @@ app.get('/api/videos', async (req, res) => {
   }
 });
 
-// Delete a video — use wildcard to handle dots in filename
-app.delete('/api/videos/*', async (req, res) => {
+// Delete a video — POST to avoid Express wildcard issues with dots in filename
+app.post('/api/delete', async (req, res) => {
   try {
-    const filename = decodeURIComponent(req.params[0]);
+    const { filename } = req.body;
+    if (!filename) return res.status(400).json({ error: 'filename required' });
     const response = await fetch(
       `${SUPABASE_URL}/storage/v1/object/${BUCKET}`,
       {
