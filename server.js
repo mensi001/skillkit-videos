@@ -13,6 +13,7 @@ const HEADERS = {
   apikey: SUPABASE_KEY,
 };
 
+app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Config for browser TUS upload
@@ -53,10 +54,10 @@ app.get('/api/videos', async (req, res) => {
   }
 });
 
-// Delete a video
-app.delete('/api/videos/:filename', async (req, res) => {
+// Delete a video — use wildcard to handle dots in filename
+app.delete('/api/videos/*', async (req, res) => {
   try {
-    const filename = decodeURIComponent(req.params.filename);
+    const filename = decodeURIComponent(req.params[0]);
     const response = await fetch(
       `${SUPABASE_URL}/storage/v1/object/${BUCKET}`,
       {
